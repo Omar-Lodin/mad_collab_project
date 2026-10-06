@@ -37,6 +37,43 @@ class _DigitalPetScreenState extends State<DigitalPetScreen> {
 
 int _clampMeter(int value) => value.clamp(0, 100).toInt();
 
+void _resetPet() {
+  _highMoodTimer?.cancel();
+  _highMoodTimer = null;
+
+  setState(() {
+    _hunger = 50;
+    _happiness = 50;
+    energy = 70;
+    _gameOver = false;
+    _hasWon = false;
+  });
+
+  if (_hungerTimer?.isActive != true) {
+    _hungerTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (timer) {
+        if (!mounted || _gameOver || _hasWon) {
+          timer.cancel();
+          return;
+        }
+
+        setState(() {
+          if (_hunger + 5 > 100) {
+            _hunger = 100;
+            _happiness = _clampMeter(_happiness - 20);
+          } else {
+            _hunger += 5;
+          }
+        });
+
+        _updateOutcome();
+      },
+    );
+  }
+}
+
+
 void _feedPet() {
   if (_gameOver || _hasWon) return;
 
@@ -123,6 +160,10 @@ Widget _meterBar(String label, int value, Color color) {
             ElevatedButton(
               onPressed: _gameOver || _hasWon || energy == 100 ? null  : _restPet,
               child: const Text('Rest'),
+            ),
+            ElevatedButton(
+              onPressed: _resetPet,
+              child: const Text('Reset'),
             ),
             if (_gameOver)
               const Text(
