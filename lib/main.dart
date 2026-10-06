@@ -71,6 +71,8 @@ void _resetPet() {
       },
     );
   }
+
+   _updateOutcome();
 }
 
 
