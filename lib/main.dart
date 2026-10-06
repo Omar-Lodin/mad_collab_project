@@ -1,122 +1,520 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 
-void main() {
-  runApp(const MyApp());
-}
+void main() => runApp(const DigitalPetApp());
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class DigitalPetApp extends StatelessWidget {
+  const DigitalPetApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Digital Pet Lab',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorSchemeSeed: Colors.indigo,
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const DigitalPetScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class DigitalPetScreen extends StatefulWidget {
+  const DigitalPetScreen({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<DigitalPetScreen> createState() => _DigitalPetScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _DigitalPetScreenState extends State<DigitalPetScreen> {
+  // ==========================================================
+  // TEAM 1 - CARE SYSTEM
+  // ==========================================================
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  int _hunger = 50;
+  int _happiness = 50;
+  int energy = 70;
+
+  bool _gameOver = false;
+  bool _hasWon = false;
+
+  final TextEditingController _nameController =
+      TextEditingController();
+
+  Timer? _hungerTimer;
+  Timer? _highMoodTimer;
+
+  int _clampMeter(int value) {
+    return value.clamp(0, 100).toInt();
   }
+
+  // ==========================================================
+  // TEAM 2 - PET PERSONALITY
+  // ==========================================================
+
+  String get _petName {
+    final name = _nameController.text.trim();
+
+    if (name.isEmpty) {
+      return 'Pip';
+    }
+
+    return name;
+  }
+
+  String get _moodLabel {
+    if (_happiness > 70) {
+      return 'Happy';
+    }
+
+    if (_happiness >= 30) {
+      return 'Neutral';
+    }
+
+    return 'Unhappy';
+  }
+
+  Color get _moodColor {
+    if (_happiness > 70) {
+      return Colors.green;
+    }
+
+    if (_happiness >= 30) {
+      return Colors.yellow;
+    }
+
+    return Colors.red;
+  }
+
+  double get _petScale {
+    if (_happiness > 70) {
+      return 1.06;
+    }
+
+    if (_happiness < 30) {
+      return 0.94;
+    }
+
+    return 1.0;
+  }
+
+  String get _petMessage {
+    if (_gameOver) {
+      return 'I need a rest.';
+    }
+
+    if (_hasWon) {
+      return 'Best day ever!';
+    }
+
+    if (_hunger > 80) {
+      return "I'm starving!";
+    }
+
+    if (_happiness <= 30) {
+      return 'Play with me?';
+    }
+
+    if (energy < 20) {
+      return 'So sleepy...';
+    }
+
+    return "Hi, I'm $_petName!";
+  }
+
+  // ==========================================================
+  // TEAM 1 - CARE ACTIONS
+  // ==========================================================
+
+  void _feedPet() {
+    if (_gameOver || _hasWon) return;
+
+    setState(() {
+      _hunger = _clampMeter(_hunger - 10);
+    });
+
+    _updateOutcome();
+  }
+
+  void _playWithPet() {
+    if (_gameOver || _hasWon) return;
+
+    setState(() {
+      _happiness = _clampMeter(_happiness + 10);
+      _hunger = _clampMeter(_hunger + 5);
+      energy = _clampMeter(energy - 10);
+    });
+
+    _updateOutcome();
+  }
+
+  void _restPet() {
+    if (_gameOver || _hasWon) return;
+
+    setState(() {
+      energy = _clampMeter(energy + 20);
+      _hunger = _clampMeter(_hunger + 5);
+    });
+
+    _updateOutcome();
+  }
+
+  void _resetPet() {
+    _highMoodTimer?.cancel();
+    _highMoodTimer = null;
+
+    setState(() {
+      _hunger = 50;
+      _happiness = 50;
+      energy = 70;
+      _gameOver = false;
+      _hasWon = false;
+    });
+
+    // Restart timer if it was stopped by game over/win.
+    if (_hungerTimer?.isActive != true) {
+      _startCareTimer();
+    }
+  }
+
+  // ==========================================================
+  // CARE TIMER
+  // Hunger goes up and happiness goes down every 30 seconds.
+  // ==========================================================
+
+  void _startCareTimer() {
+    _hungerTimer?.cancel();
+
+    _hungerTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+
+        if (_gameOver || _hasWon) {
+          timer.cancel();
+          return;
+        }
+
+        setState(() {
+          _hunger = _clampMeter(_hunger + 5);
+          _happiness = _clampMeter(_happiness - 5);
+        });
+
+        _updateOutcome();
+      },
+    );
+  }
+
+  // ==========================================================
+  // TEAM 2 - ANIMATED METERS
+  // ==========================================================
+
+  Widget _meterBar(
+    String label,
+    int value,
+    Color color,
+    bool reduceMotion,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('$label: $value'),
+
+          const SizedBox(height: 6),
+
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(
+              begin: 0,
+              end: value / 100,
+            ),
+            duration: reduceMotion
+                ? Duration.zero
+                : const Duration(milliseconds: 400),
+            curve: Curves.easeOut,
+            builder: (context, animatedValue, child) {
+              return LinearProgressIndicator(
+                value: animatedValue,
+                color: color,
+                backgroundColor: Colors.grey[300],
+                minHeight: 12,
+                borderRadius: const BorderRadius.all(
+                  Radius.circular(6),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================
+  // TEAM 1 - GAME OUTCOME
+  // ==========================================================
+
+  void _updateOutcome() {
+    if (_gameOver || _hasWon) return;
+
+    // Game over
+    if (_hunger == 100 && _happiness <= 10) {
+      _highMoodTimer?.cancel();
+      _highMoodTimer = null;
+      _hungerTimer?.cancel();
+
+      setState(() {
+        _gameOver = true;
+      });
+
+      return;
+    }
+
+    // Happiness must stay above 80 for the win timer.
+    if (_happiness <= 80) {
+      _highMoodTimer?.cancel();
+      _highMoodTimer = null;
+      return;
+    }
+
+    // Start win timer if one is not already running.
+    _highMoodTimer ??= Timer(
+      const Duration(minutes: 3),
+      () {
+        _highMoodTimer = null;
+
+        if (!mounted ||
+            _gameOver ||
+            _happiness <= 80) {
+          return;
+        }
+
+        setState(() {
+          _hasWon = true;
+        });
+
+        _hungerTimer?.cancel();
+      },
+    );
+  }
+
+  // ==========================================================
+  // SCREEN
+  // ==========================================================
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    // TEAM 2 - Respect reduced-motion accessibility setting.
+    final reduceMotion =
+        MediaQuery.of(context).disableAnimations;
+
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('Digital Pet Lab'),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              // ==================================================
+              // PET NAME
+              // ==================================================
+
+              TextField(
+                controller: _nameController,
+
+                onChanged: (value) {
+                  setState(() {});
+                },
+
+                decoration: const InputDecoration(
+                  labelText: 'Pet Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // ==================================================
+              // TEAM 2 - PET IMAGE
+              // ==================================================
+
+              AnimatedScale(
+                scale: _petScale,
+                duration: reduceMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 180),
+                curve: Curves.easeOutBack,
+
+                child: ColorFiltered(
+                  colorFilter: ColorFilter.mode(
+                    _moodColor,
+                    BlendMode.modulate,
+                  ),
+
+                  child: Image.asset(
+                    'assets/Hulk.jpg',
+                    width: 180,
+                    height: 180,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // ==================================================
+              // TEAM 2 - MOOD
+              // ==================================================
+
+              Text(
+                'Mood: $_moodLabel',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // ==================================================
+              // TEAM 2 - PET MESSAGE
+              // ==================================================
+
+              AnimatedSwitcher(
+                duration: reduceMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 300),
+
+                child: Text(
+                  _petMessage,
+                  key: ValueKey(_petMessage),
+                  textAlign: TextAlign.center,
+
+                  style: const TextStyle(
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 25),
+
+              // ==================================================
+              // METERS
+              // ==================================================
+
+              _meterBar(
+                'Hunger',
+                _hunger,
+                Colors.orange,
+                reduceMotion,
+              ),
+
+              _meterBar(
+                'Happiness',
+                _happiness,
+                Colors.green,
+                reduceMotion,
+              ),
+
+              _meterBar(
+                'Energy',
+                energy,
+                Colors.blue,
+                reduceMotion,
+              ),
+
+              const SizedBox(height: 20),
+
+              // ==================================================
+              // TEAM 1 - CARE BUTTONS
+              // ==================================================
+
+              ElevatedButton(
+                onPressed:
+                    _gameOver || _hasWon ? null : _feedPet,
+                child: const Text('Feed'),
+              ),
+
+              ElevatedButton(
+                onPressed:
+                    _gameOver || _hasWon ? null : _playWithPet,
+                child: const Text('Play'),
+              ),
+
+              ElevatedButton(
+                onPressed:
+                    _gameOver ||
+                            _hasWon ||
+                            energy == 100
+                        ? null
+                        : _restPet,
+                child: const Text('Rest'),
+              ),
+
+              ElevatedButton(
+                onPressed: _resetPet,
+                child: const Text('Reset'),
+              ),
+
+              const SizedBox(height: 15),
+
+              // ==================================================
+              // OUTCOME TEXT
+              // ==================================================
+
+              if (_gameOver)
+                const Text(
+                  'Game Over!',
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+
+              if (_hasWon)
+                const Text(
+                  'You Won!',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
     );
+  }
+
+  // ==========================================================
+  // START TIMER
+  // ==========================================================
+
+  @override
+  void initState() {
+    super.initState();
+    _startCareTimer();
+  }
+
+  // ==========================================================
+  // CLEAN UP
+  // ==========================================================
+
+  @override
+  void dispose() {
+    _hungerTimer?.cancel();
+    _highMoodTimer?.cancel();
+    _nameController.dispose();
+
+    super.dispose();
   }
 }
